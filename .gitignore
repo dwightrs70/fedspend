@@ -1,0 +1,35 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets and local config
+.env
+*.pem
+*.key
+
+# Data (never commit raw or derived data)
+data/*
+!data/.gitkeep
+!data/discovery/.gitkeep
+*.parquet
+*.duckdb
+*.duckdb.wal
+
+# Docker volumes / tooling
+.docker/
+mlruns/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# OS / IDE
+.DS_Store
+.idea/

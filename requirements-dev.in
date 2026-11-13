@@ -1,0 +1,6 @@
+-r requirements-ingestion.in
+pytest
+pytest-cov
+ruff
+pre-commit
+pip-tools
