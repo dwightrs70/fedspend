@@ -20,3 +20,5 @@ make up                 # MinIO (S3-compatible) + Postgres
 
 All data comes from the public USAspending.gov API and bulk files (no authentication, public
 domain). No employer or non-public data is used. Data files are never committed.
+
+This is a test change.
