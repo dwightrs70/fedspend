@@ -8,7 +8,7 @@ __pycache__/
 htmlcov/
 
 # Secrets and local config
-.env
+.env*
 *.pem
 *.key
 
