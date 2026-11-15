@@ -131,10 +131,14 @@ def dedupe_by_url(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     unique: list[dict[str, Any]] = []
     for row in rows:
         url = row.get("url")
-        if url in seen:
-            continue
-        seen.add(url)
-        unique.append(row)
+
+        if url:
+            if url in seen:
+                continue
+
+            seen.add(url)
+            unique.append(row)
+
     return unique
 
 
@@ -178,13 +182,15 @@ def main() -> None:
     rows: list[dict[str, Any]] = []
     for code, agency in matched.items():
         agency_id = agency.get("toptier_agency_id", agency.get("id"))
-        for fiscal_year in parse_fiscal_years(args.fiscal_years):
-            for file_type in FILE_TYPES:
-                response = client.list_monthly_files(agency_id, fiscal_year, file_type)
-                if args.dump_raw:
-                    name = f"monthly_{code}_{fiscal_year}_{file_type}.raw.json"
-                    (args.out / name).write_text(json.dumps(response, indent=2))
-                rows.extend(build_row(code, item) for item in response.get("monthly_files", []))
+
+        if agency_id:
+            for fiscal_year in parse_fiscal_years(args.fiscal_years):
+                for file_type in FILE_TYPES:
+                    response = client.list_monthly_files(agency_id, fiscal_year, file_type)
+                    if args.dump_raw:
+                        name = f"monthly_{code}_{fiscal_year}_{file_type}.raw.json"
+                        (args.out / name).write_text(json.dumps(response, indent=2))
+                    rows.extend(build_row(code, item) for item in response.get("monthly_files", []))
 
     rows = sorted(dedupe_by_url(rows), key=_sort_key)
 
