@@ -57,19 +57,15 @@ def test_parse_archive_name_full_file():
 
 def test_parse_archive_name_delta_file_has_all_years():
     parsed = parse_archive_name("FY(All)_020_Assistance_Delta_20261106.zip")
-
-    if parsed:
-        assert parsed["fiscal_year"] == "All"
-        assert parsed["file_kind"] == "delta"
-        assert parsed["award_type"] == "assistance"
-    else:
-        raise AssertionError("Expected a parsable name")
+    assert parsed["fiscal_year"] == "All"
+    assert parsed["file_kind"] == "delta"
+    assert parsed["award_type"] == "assistance"
 
 
 def test_parse_archive_name_rejects_unexpected_names():
     assert parse_archive_name("something_else.zip") is None
     assert parse_archive_name("") is None
-    assert parse_archive_name("FY(All)_020_Assistance_Delt_20261106.zip") is None
+    assert parse_archive_name(None) is None
 
 
 def test_build_row_uses_parsed_name_not_query_year():

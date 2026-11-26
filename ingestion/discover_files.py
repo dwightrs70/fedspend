@@ -16,6 +16,7 @@ import argparse
 import csv
 import json
 import re
+import time
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -131,14 +132,10 @@ def dedupe_by_url(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     unique: list[dict[str, Any]] = []
     for row in rows:
         url = row.get("url")
-
-        if url:
-            if url in seen:
-                continue
-
-            seen.add(url)
-            unique.append(row)
-
+        if url in seen:
+            continue
+        seen.add(url)
+        unique.append(row)
     return unique
 
 
@@ -160,7 +157,13 @@ def main() -> None:
     parser.add_argument(
         "--with-sizes",
         action="store_true",
-        help="HEAD each file URL to record its size (no files are downloaded)",
+        help="Check each file size with a 1-byte ranged GET (HEAD as fallback); no downloads",
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.5,
+        help="Seconds to pause between size checks, to avoid being throttled",
     )
     args = parser.parse_args()
 
@@ -182,26 +185,32 @@ def main() -> None:
     rows: list[dict[str, Any]] = []
     for code, agency in matched.items():
         agency_id = agency.get("toptier_agency_id", agency.get("id"))
-
-        if agency_id:
-            for fiscal_year in parse_fiscal_years(args.fiscal_years):
-                for file_type in FILE_TYPES:
-                    response = client.list_monthly_files(agency_id, fiscal_year, file_type)
-                    if args.dump_raw:
-                        name = f"monthly_{code}_{fiscal_year}_{file_type}.raw.json"
-                        (args.out / name).write_text(json.dumps(response, indent=2))
-                    rows.extend(build_row(code, item) for item in response.get("monthly_files", []))
+        for fiscal_year in parse_fiscal_years(args.fiscal_years):
+            for file_type in FILE_TYPES:
+                response = client.list_monthly_files(agency_id, fiscal_year, file_type)
+                if args.dump_raw:
+                    name = f"monthly_{code}_{fiscal_year}_{file_type}.raw.json"
+                    (args.out / name).write_text(json.dumps(response, indent=2))
+                rows.extend(build_row(code, item) for item in response.get("monthly_files", []))
 
     rows = sorted(dedupe_by_url(rows), key=_sort_key)
 
     if args.with_sizes:
         total_bytes = 0
+        unavailable = 0
         for row in rows:
-            size = client.head_content_length(row["url"])
+            size, note = client.remote_size(row["url"])
             row["size_mb"] = bytes_to_mb(size)
             total_bytes += size or 0
-            print(f"{row['file_name']}: {row['size_mb'] or 'size unavailable'} MB")
-        print(f"Total compressed size: {total_bytes / 1_000_000_000:.2f} GB")
+            if size is None:
+                unavailable += 1
+                print(f"{row['file_name']}: size unavailable ({note})")
+            else:
+                print(f"{row['file_name']}: {row['size_mb']} MB")
+            time.sleep(args.delay)
+        print(f"Total of known sizes: {total_bytes / 1_000_000_000:.2f} GB")
+        if unavailable:
+            print(f"WARNING: {unavailable} of {len(rows)} sizes unavailable; total is incomplete")
 
     summary = args.out / "archive_files.csv"
     with summary.open("w", newline="") as handle:

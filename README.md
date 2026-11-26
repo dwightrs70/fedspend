@@ -13,6 +13,7 @@ make install            # dev dependencies + pre-commit hooks
 cp .env.example .env    # then edit the passwords
 make test
 make discover           # lists DHS/Treasury archive files from USAspending
+make discover-sizes     # lists DHS/Treasury archive files from USAspending with file sizes
 make up                 # MinIO (S3-compatible) + Postgres
 ```
 
