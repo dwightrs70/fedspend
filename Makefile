@@ -1,4 +1,4 @@
-.PHONY: help install lint format test discover discover-sizes up down logs check-env
+.PHONY: help install lint format test discover discover-sizes up down logs check-env download
 
 PY := .venv/bin/python
 PIP := .venv/bin/pip
@@ -46,3 +46,6 @@ down:
 
 logs:
 	docker compose logs -f --tail=100
+
+download: check-env
+	$(PY) -m ingestion.download_files $(ARGS)
