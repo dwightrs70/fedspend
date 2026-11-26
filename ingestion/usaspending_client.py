@@ -15,14 +15,14 @@ DEFAULT_TIMEOUT = 60
 def build_session(user_agent: str = "fedspend-portfolio-project/0.1") -> requests.Session:
     """Session with retries and backoff for transient errors and rate limiting.
 
-    POST is included in the retry list because the endpoints we call with POST are
-    read-only queries (safe to repeat).
+    HEAD and POST are included in the retry list because the requests we make with them are
+    read-only (safe to repeat).
     """
     retry = Retry(
         total=5,
         backoff_factor=1.0,
         status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=frozenset({"GET", "POST"}),
+        allowed_methods=frozenset({"GET", "HEAD", "POST"}),
         respect_retry_after_header=True,
     )
     session = requests.Session()
@@ -57,15 +57,53 @@ class USAspendingClient:
         response.raise_for_status()
         return response.json()
 
-    def head_content_length(self, url: str) -> int | None:
-        """Size in bytes of a remote file via HEAD (no download). None if unavailable."""
+    def remote_size(self, url: str) -> tuple[int | None, str]:
+        """Size in bytes of a remote file without downloading it: (size, note).
+
+        Uses a one-byte ranged GET and reads the total from Content-Range. HEAD is only a
+        fallback, because files.usaspending.gov (behind a load balancer) often drops HEAD
+        connections ("Empty reply from server"). Each request asks the server to close the
+        connection, so one dropped connection can't poison later requests.
+        On failure returns (None, reason).
+        """
+        note = ""
         try:
-            response = self.session.head(url, allow_redirects=True, timeout=self.timeout)
-            response.raise_for_status()
+            response = self.session.get(
+                url,
+                headers={"Range": "bytes=0-0", "Connection": "close"},
+                stream=True,
+                allow_redirects=True,
+                timeout=self.timeout,
+            )
+            try:
+                if response.status_code == 206:
+                    total = response.headers.get("Content-Range", "").rsplit("/", 1)[-1]
+                    if total.isdigit():
+                        return int(total), ""
+                elif response.status_code == 200:
+                    length = response.headers.get("Content-Length")
+                    if length is not None and length.isdigit():
+                        return int(length), ""
+                note = f"ranged GET status {response.status_code}"
+            finally:
+                response.close()
+        except requests.RequestException as exc:
+            note = f"ranged GET error {type(exc).__name__}: {str(exc)[:80]}"
+
+        try:
+            response = self.session.head(
+                url,
+                headers={"Connection": "close"},
+                allow_redirects=True,
+                timeout=self.timeout,
+            )
             length = response.headers.get("Content-Length")
-            return int(length) if length is not None else None
-        except (requests.RequestException, ValueError):
-            return None
+            if response.status_code < 400 and length is not None and length.isdigit():
+                return int(length), ""
+            note += f"; HEAD status {response.status_code}"
+        except requests.RequestException as exc:
+            note += f"; HEAD error {type(exc).__name__}"
+        return None, note
 
     # --- Endpoints used for discovery -------------------------------------------------
 
