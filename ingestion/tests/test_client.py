@@ -64,3 +64,39 @@ def test_remote_size_reports_reason_when_everything_fails():
     assert size is None
     assert "ranged GET error ConnectionError" in note
     assert "HEAD error ConnectionError" in note
+
+
+def test_download_to_writes_file_and_returns_checksum(tmp_path):
+    import hashlib
+
+    response = MagicMock()
+    response.headers = {"Content-Length": "6"}
+    response.iter_content.return_value = [b"abc", b"def"]
+    session = MagicMock()
+    session.get.return_value.__enter__.return_value = response
+    client = USAspendingClient(session=session)
+
+    dest = tmp_path / "sub" / "f.zip"
+    written, sha = client.download_to("https://example.com/f.zip", dest)
+
+    assert written == 6
+    assert dest.read_bytes() == b"abcdef"
+    assert sha == hashlib.sha256(b"abcdef").hexdigest()
+    assert not (tmp_path / "sub" / "f.zip.part").exists()
+
+
+def test_download_to_rejects_truncated_download_and_cleans_up(tmp_path):
+    import pytest
+
+    response = MagicMock()
+    response.headers = {"Content-Length": "100"}
+    response.iter_content.return_value = [b"abc"]
+    session = MagicMock()
+    session.get.return_value.__enter__.return_value = response
+    client = USAspendingClient(session=session)
+
+    dest = tmp_path / "f.zip"
+    with pytest.raises(OSError):
+        client.download_to("https://example.com/f.zip", dest)
+    assert not dest.exists()
+    assert not (tmp_path / "f.zip.part").exists()

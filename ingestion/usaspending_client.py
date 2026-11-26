@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -104,6 +106,39 @@ class USAspendingClient:
         except requests.RequestException as exc:
             note += f"; HEAD error {type(exc).__name__}"
         return None, note
+
+    def download_to(self, url: str, dest: Path, chunk_size: int = 1 << 20) -> tuple[int, str]:
+        """Stream a URL to dest and return (bytes_written, sha256_hex).
+
+        Writes to a temporary .part file and renames it only after the byte count matches the
+        server's Content-Length, so an interrupted download never leaves a plausible-looking
+        partial file behind.
+        """
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        part = dest.with_name(dest.name + ".part")
+        digest = hashlib.sha256()
+        written = 0
+        try:
+            with self.session.get(
+                url,
+                stream=True,
+                headers={"Connection": "close"},
+                timeout=(10, self.timeout),
+            ) as response:
+                response.raise_for_status()
+                expected = response.headers.get("Content-Length")
+                with part.open("wb") as handle:
+                    for chunk in response.iter_content(chunk_size=chunk_size):
+                        handle.write(chunk)
+                        digest.update(chunk)
+                        written += len(chunk)
+            if expected is not None and expected.isdigit() and written != int(expected):
+                raise OSError(f"Incomplete download: got {written} bytes, expected {expected}")
+            part.replace(dest)
+        except BaseException:
+            part.unlink(missing_ok=True)
+            raise
+        return written, digest.hexdigest()
 
     # --- Endpoints used for discovery -------------------------------------------------
 
